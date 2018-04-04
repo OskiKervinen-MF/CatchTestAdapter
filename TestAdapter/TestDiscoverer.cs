@@ -75,7 +75,8 @@ namespace CatchTestAdapter
             // Parse line info with regex.
             var lineInfoMatch = lineInfoPattern.Match( lineInfoString );
             if ( !lineInfoMatch.Success )
-                throw new Exception(String.Format("Could not parse line info from '{0}'.", lineInfoString ) );
+                throw new Exception(String.Format("Could not parse line info from '{0}'. Source line group: [{1}]", lineInfoString,
+                    lineGroup.Aggregate((acc, add) => acc + "\n" + add ) ) );
 
             string path = lineInfoMatch.Groups[ "path" ].Value;
             int lineNumber = Int32.Parse( lineInfoMatch.Groups[ "line" ].Value );
