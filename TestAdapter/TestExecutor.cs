@@ -8,6 +8,8 @@ using System.Xml.Linq;
 using System.Globalization;
 using System.Diagnostics;
 
+using TestAdapter.Settings;
+
 namespace CatchTestAdapter
 {
     [ExtensionUri(ExecutorUriString)]
@@ -23,11 +25,26 @@ namespace CatchTestAdapter
 
         public void RunTests(IEnumerable<string> sources, IRunContext runContext, IFrameworkHandle frameworkHandle)
         {
-            frameworkHandle.SendMessage(TestMessageLevel.Informational, "RunTest with source " + sources.First());
-            foreach(var exeName in sources)
+            // Load settings from the context.
+            var settings = CatchSettingsProvider.LoadSettings( runContext.RunSettings );
+
+            frameworkHandle.SendMessage(TestMessageLevel.Informational, "CatchAdapter::RunTests... " );
+
+            // Run tests in all included executables.
+            foreach ( var exeName in sources.Where( name => settings.IncludeTestExe( name ) ) )
             {
-                var  tests = TestDiscoverer.CreateTestCases(exeName);
-                RunTests(tests, runContext, frameworkHandle);
+                // Wrap execution in try to stop one executable's exceptions from stopping the others from being run.
+                try
+                {
+                    frameworkHandle.SendMessage( TestMessageLevel.Informational, "RunTest with source " + exeName );
+                    var tests = TestDiscoverer.CreateTestCases( exeName );
+                    RunTests( tests, runContext, frameworkHandle );
+                }
+                catch ( Exception ex )
+                {
+                    frameworkHandle.SendMessage( TestMessageLevel.Error, "Exception running tests: " + ex.Message );
+                    frameworkHandle.SendMessage( TestMessageLevel.Error, "Exception stack: " + ex.StackTrace );
+                }
             }
         }
 
@@ -136,15 +153,25 @@ namespace CatchTestAdapter
             
             // Write them to the input file for Catch runner
             System.IO.File.WriteAllText(CatchExe + ".testcases", listOfTestCases);
-            
+
             // Execute the tests
-            var output_text = new ProcessRunner(CatchExe, "-r xml --durations yes --input-file " + CatchExe + ".testcases");
+            IList<string> output_text;
+
+            string arguments = "-r xml --durations yes --input-file " + CatchExe + ".testcases";
+            if ( runContext.IsBeingDebugged )
+            {
+                output_text = ProcessRunner.RunDebugProcess( frameworkHandle, CatchExe, arguments );
+            }
+            else
+            {
+                output_text = ProcessRunner.RunProcess( CatchExe, arguments );
+            }
 
             timer.Stop();
             frameworkHandle.SendMessage(TestMessageLevel.Informational, "Overall time " + timer.Elapsed.ToString());
 
             // Output as a single string.
-            string output = output_text.Output.Aggregate("", (acc, add) => acc + add);
+            string output = output_text.Aggregate("", (acc, add) => acc + add);
 
             // Output as an XML document.
             XDocument doc = XDocument.Parse(output);
