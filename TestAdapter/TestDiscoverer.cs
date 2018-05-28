@@ -21,17 +21,24 @@ namespace CatchTestAdapter
             // Load settings from the discovery context.
             CatchAdapterSettings settings = CatchSettingsProvider.LoadSettings( discoveryContext.RunSettings );
 
-            //System.Diagnostics.Debugger.Launch();
-            foreach (var src in sources.Where( src => settings.IncludeTestExe(src) ))
+            try
             {
-                logger.SendMessage( TestMessageLevel.Informational, $"Processing catch test source: '{src}'..." );
-
-                var testCases = CreateTestCases(src);
-                foreach (var t in testCases)
+                foreach (var src in sources.Where(src => settings.IncludeTestExe(src)))
                 {
-                    discoverySink.SendTestCase(t);
-                    logger.SendMessage(TestMessageLevel.Informational, t.DisplayName);
+                    logger.SendMessage(TestMessageLevel.Informational, $"Processing catch test source: '{src}'...");
+
+                    var testCases = CreateTestCases(src);
+                    foreach (var t in testCases)
+                    {
+                        discoverySink.SendTestCase(t);
+                        logger.SendMessage(TestMessageLevel.Informational, t.DisplayName);
+                    }
                 }
+            }
+            catch (Exception ex)
+            {
+                // Just log the error message.
+                logger.SendMessage(TestMessageLevel.Error, ex.Message);
             }
         }
 
@@ -39,7 +46,11 @@ namespace CatchTestAdapter
         public static IList<TestCase> CreateTestCases( string exeName )
         {
             var testCases = new List<TestCase>();
-            var output = ProcessRunner.RunProcess(exeName, "--list-tests --verbosity high");
+
+            // Use the directory of the executable as the working directory.
+            string workingDirectory = System.IO.Path.GetDirectoryName( exeName );
+
+            var output = ProcessRunner.RunProcess(exeName, "--list-tests --verbosity high", workingDirectory);
 
             foreach (var test in ParseListing( exeName, output ) )
             {
@@ -121,7 +132,8 @@ namespace CatchTestAdapter
             // The first line should be fixed.
             if( !line.MoveNext() || line.Current != "All available test cases:" )
             {
-                throw new Exception( "Unexpected line in catch output: " + line.Current );
+                yield break;
+                //throw new Exception( "Unexpected line in catch output: " + line.Current );
             }
 
             // Split output to groups of lines related to the same test case.
